@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>CANDLE.PUSH — Testnet</title>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="css/style.css"/>
+</head>
+<body>
+<div id="app">
+
+  <!-- ── Topbar ── -->
+  <div class="topbar">
+    <div style="display:flex;align-items:center;min-width:0">
+      <div class="logo">📈 CANDLE.PUSH</div>
+      <div class="tabs">
+        <button class="tab active">Candle</button>
+        <button class="tab">Tile</button>
+        <button class="tab">Plinko</button>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <span id="phPill" class="phase-pill wait">WAITING</span>
+      <span class="ms-badge" id="msLabel">38 ms</span>
+      <button class="deposit-btn">Deposit</button>
+    </div>
+  </div>
+
+  <!-- ── Main ── -->
+  <div class="main">
+
+    <!-- Chat sidebar -->
+    <div class="sidebar-left">
+      <div class="panel-title">Live Chat</div>
+      <div class="chat-body" id="chatBody"></div>
+      <div class="chat-input-wrap">
+        <input class="chat-input" placeholder="Say something..." id="chatInput"/>
+      </div>
+    </div>
+
+    <!-- Chart area -->
+    <div class="chart-area">
+      <div class="chart-topbar">
+        <span style="font-size:9px;color:var(--muted);font-family:var(--mono)">Last 100</span>
+        <span style="font-family:var(--mono);font-size:9px;color:var(--yellow)">🔥 337x</span>
+        <span class="cpill" style="background:#071a0f;color:var(--green);border:1px solid #0a2918">2x <span id="c2">43</span></span>
+        <span class="cpill" style="background:#1a1500;color:var(--yellow);border:1px solid #3a2800">10x <span id="c10">5</span></span>
+        <span class="cpill" style="background:#1a070a;color:var(--red);border:1px solid #2a0a10">50x <span id="c50">0</span></span>
+        <div class="hpills" id="hpills"></div>
+      </div>
+
+      <div class="chart-wrap" id="chartWrap">
+        <canvas id="gc"></canvas>
+        <div class="mult-overlay s" id="multDisp">1.00x</div>
+
+        <!-- Countdown overlay -->
+        <div class="countdown-overlay" id="cdOverlay">
+          <div class="countdown-num" id="cdNum">10</div>
+          <div class="countdown-lbl">next round starting...</div>
+        </div>
+
+        <!-- Rugged overlay -->
+        <div class="crash-overlay" id="crashOverlay">
+          <div class="crash-title">RUGGED! 💀</div>
+          <div class="crash-sub">Rugged at <span id="crashAt">-</span></div>
+          <div class="crash-cd" id="crashCd">Next round in 10s...</div>
+        </div>
+      </div>
+
+      <!-- Bet panel -->
+      <div class="bet-panel">
+        <div class="bet-row">
+          <div class="bet-wrap">
+            <input class="bet-inp" type="number" id="betAmt" value="0.010" step="0.001" min="0.001"/>
+            <div class="bq-wrap">
+              <button class="bq" onclick="adj(0.001)">+0.001</button>
+              <button class="bq" onclick="adj(0.01)">+0.01</button>
+              <button class="bq" onclick="halfB()">1/2</button>
+              <button class="bq" onclick="dblB()">x2</button>
+              <button class="bq" onclick="maxB()">MAX</button>
+            </div>
+          </div>
+        </div>
+        <div class="act-row">
+          <button class="btn-b" id="buyBtn"  onclick="placeBet()">Buy 0.010 PUSH</button>
+          <button class="btn-s" id="sellBtn" onclick="cashOut()" disabled>Sell 100%</button>
+        </div>
+        <div class="auto-row">
+          <button class="ab" onclick="setAuto(2)">Auto 2x</button>
+          <button class="ab" onclick="setAuto(5)">Auto 5x</button>
+          <button class="ab" onclick="setAuto(10)">Auto 10x</button>
+          <button class="ab" id="autoDisp" onclick="clearAuto()">Auto: Off</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Players sidebar -->
+    <div class="sidebar-right">
+      <div class="bal-bar">
+        <div class="bal-lbl">Balance</div>
+        <div class="bal-val" id="balDisp">10.000 PUSH</div>
+      </div>
+      <div class="panel-title">Players</div>
+      <div class="lb-body" id="lbBody"></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- JS — order matters! -->
+<script src="js/config.js"></script>
+<script src="js/priceEngine.js"></script>
+<script src="js/chart.js"></script>
+<script src="js/game.js"></script>
+<script src="js/ui.js"></script>
+<script>
+  // Boot
+  initUI();
+  initCanvas(); // triggers startRound() internally via rAF
+</script>
+</body>
+</html>
