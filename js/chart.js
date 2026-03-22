@@ -28,6 +28,7 @@ function resizeCanvas() {
   if (W < 10 || H < 10) { W = window.innerWidth - 360; H = 400; } // fallback
   canvas.width  = W;
   canvas.height = H;
+  ctx = canvas.getContext('2d'); // always re-acquire after resize
 }
 
 window.addEventListener('resize', resizeCanvas);
