@@ -108,16 +108,11 @@
   </div>
 </div>
 
-<!-- JS — order matters! -->
-<script src="js/config.js"></script>
-<script src="js/priceEngine.js"></script>
-<script src="js/chart.js"></script>
-<script src="js/game.js"></script>
-<script src="js/ui.js"></script>
+<!-- JS — single bundle, no cross-file dependency issues -->
+<script src="js/app.js"></script>
 <script>
-  // Boot
   initUI();
-  initCanvas(); // triggers startRound() internally via rAF
+  initCanvas();
 </script>
 </body>
 </html>
