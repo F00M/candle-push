@@ -325,11 +325,13 @@ function finishCrash() {
 
 function startCountdown() {
   phase = 'waiting';
+  mult  = 1; // reset multiplier state so no stale value
   document.getElementById('phPill').textContent    = 'WAITING';
   document.getElementById('phPill').className      = 'phase-pill wait';
   document.getElementById('multDisp').textContent  = '1.00x';
   document.getElementById('multDisp').className    = 'mult-overlay s';
-  document.getElementById('buyBtn').disabled       = false;
+  document.getElementById('buyBtn').disabled       = true;  // disabled during countdown
+  document.getElementById('buyBtn').textContent    = 'Waiting...';
   document.getElementById('sellBtn').disabled      = true;
   playerIn = false; playerBet = 0; chartEvents = [];
   const cdO = document.getElementById('cdOverlay'), cdN = document.getElementById('cdNum');
@@ -355,6 +357,7 @@ function startRound() {
   document.getElementById('buyBtn').disabled      = false;
   document.getElementById('buyBtn').textContent   = 'Buy ' + parseFloat(document.getElementById('betAmt').value).toFixed(3) + ' PUSH';
   phase = 'live'; mult = 1;
+  playerIn = false; playerBet = 0; playerBuyMult = 1;
   resetPlayers(); renderLb();
   chat('System', 'New round! 🎯', true, G);
   lastTs = performance.now(); rafId = requestAnimationFrame(loop);
@@ -434,32 +437,72 @@ function resetPlayers() {
 function renderLb() {
   const b = document.getElementById('lbBody');
   b.innerHTML = '';
+
+  // ── Player sendiri di atas (kalau lagi in) ──
+  if (playerIn || (phase !== 'live' && playerBuyMult > 0)) {
+    const curProfit = playerIn ? parseFloat((playerBet * (mult / playerBuyMult - 1)).toFixed(4)) : 0;
+    const curPct    = playerIn ? ((curProfit / playerBet) * 100).toFixed(0) : 0;
+    const pos       = curProfit >= 0;
+    const you = document.createElement('div');
+    you.className = 'lb-row';
+    you.style.borderLeft = '2px solid var(--green)';
+    you.style.background = 'rgba(0,230,118,0.04)';
+    you.innerHTML = `
+      <div class="lb-user">
+        <div class="av" style="background:#00e67622;color:var(--green);font-size:7px">YOU</div>
+        <div>
+          <div class="lb-name" style="color:var(--green)">Parman</div>
+          <div class="lb-bet">${playerBet.toFixed(3)} PUSH</div>
+        </div>
+      </div>
+      <div style="text-align:right;line-height:1.3">
+        <div style="font-family:var(--mono);font-weight:700;font-size:11px;color:${pos ? 'var(--green)' : 'var(--red)'}">${pos ? '+' : ''}${curProfit.toFixed(3)}</div>
+        <div style="font-size:9px;color:var(--muted)">${pos ? '+' : ''}${curPct}% · in@${playerBuyMult.toFixed(2)}x</div>
+        <div style="font-size:8px;margin-top:1px">
+          <span style="background:#00e67618;color:var(--green);border:1px solid #00e67644;border-radius:3px;padding:0 4px;font-family:var(--mono)">● HOLD</span>
+        </div>
+      </div>`;
+    b.appendChild(you);
+
+    // divider
+    const sep = document.createElement('div');
+    sep.style.cssText = 'height:1px;background:var(--border);margin:0';
+    b.appendChild(sep);
+  }
+
+  // ── Bot players ──
   plState.forEach(p => {
     const d = document.createElement('div');
     d.className = 'lb-row';
     let ph;
 
     if (!p.buyMult) {
-      // Belum beli — waiting
+      // Belum buy
       ph = `<span style="font-size:9px;color:var(--muted);font-family:var(--mono)">waiting</span>`;
 
     } else if (p.cashedAt) {
-      // Sudah cashout — tampil final profit
+      // Sudah sold — P&L berhenti, tanda SOLD
       const pos = p.profit >= 0;
       const pct = ((p.profit / p.bet) * 100).toFixed(0);
       ph = `<div style="text-align:right;line-height:1.3">
         <div style="font-family:var(--mono);font-weight:700;font-size:11px;color:${pos ? 'var(--green)' : 'var(--red)'}">${pos ? '+' : ''}${p.profit.toFixed(3)}</div>
         <div style="font-size:9px;color:${pos ? 'var(--green)' : 'var(--red)'};opacity:.65">${pos ? '+' : ''}${pct}% @ ${p.cashedAt.toFixed(2)}x</div>
+        <div style="font-size:8px;margin-top:1px">
+          <span style="background:${pos?'#00e67618':'#ff3d5718'};color:${pos?'var(--green)':'var(--red)'};border:1px solid ${pos?'#00e67644':'#ff3d5744'};border-radius:3px;padding:0 4px;font-family:var(--mono)">✓ SOLD</span>
+        </div>
       </div>`;
 
     } else {
-      // Open posisi — hitung P&L real-time vs harga masuk
+      // Masih HOLD — P&L jalan real-time
       const curProfit = parseFloat((p.bet * (mult / p.buyMult - 1)).toFixed(4));
       const curPct    = ((curProfit / p.bet) * 100).toFixed(0);
       const pos       = curProfit >= 0;
       ph = `<div style="text-align:right;line-height:1.3">
         <div style="font-family:var(--mono);font-weight:700;font-size:11px;color:${pos ? 'var(--green)' : 'var(--red)'}">${pos ? '+' : ''}${curProfit.toFixed(3)}</div>
         <div style="font-size:9px;color:var(--muted)">${pos ? '+' : ''}${curPct}% · in@${p.buyMult.toFixed(2)}x</div>
+        <div style="font-size:8px;margin-top:1px">
+          <span style="background:#ffd60018;color:var(--yellow);border:1px solid #ffd60044;border-radius:3px;padding:0 4px;font-family:var(--mono)">● HOLD</span>
+        </div>
       </div>`;
     }
 
@@ -479,6 +522,36 @@ function renderLb() {
 function renderLbFinal() {
   const b = document.getElementById('lbBody');
   b.innerHTML = '';
+
+  // Player sendiri dulu
+  if (playerBet > 0 || playerBuyMult > 1) {
+    // kalau kena rug, profit negatif
+    const finalProfit = playerIn ? -playerBet : 0;
+    const pos = finalProfit >= 0;
+    const you = document.createElement('div');
+    you.className = 'lb-row';
+    you.style.borderLeft = '2px solid var(--green)';
+    you.style.background = 'rgba(0,230,118,0.04)';
+    you.innerHTML = `
+      <div class="lb-user">
+        <div class="av" style="background:#00e67622;color:var(--green);font-size:7px">YOU</div>
+        <div>
+          <div class="lb-name" style="color:var(--green)">Parman</div>
+          <div class="lb-bet">${playerBet.toFixed(3)} PUSH</div>
+        </div>
+      </div>
+      <div style="text-align:right;line-height:1.3">
+        <div style="font-family:var(--mono);font-weight:700;font-size:11px;color:${pos?'var(--green)':'var(--red)'}">${pos?'+':''}${finalProfit.toFixed(3)}</div>
+        <div style="font-size:8px;margin-top:2px">
+          <span style="background:#ff3d5718;color:var(--red);border:1px solid #ff3d5744;border-radius:3px;padding:0 4px;font-family:var(--mono)">💀 RUGGED</span>
+        </div>
+      </div>`;
+    b.appendChild(you);
+    const sep = document.createElement('div');
+    sep.style.cssText = 'height:1px;background:var(--border)';
+    b.appendChild(sep);
+  }
+
   plState.forEach(p => {
     const d = document.createElement('div');
     d.className = 'lb-row';
@@ -489,9 +562,13 @@ function renderLbFinal() {
     } else {
       const pos = p.profit >= 0;
       const pct = ((p.profit / p.bet) * 100).toFixed(0);
+      const badge = p.cashedAt
+        ? `<span style="background:${pos?'#00e67618':'#ff3d5718'};color:${pos?'var(--green)':'var(--red)'};border:1px solid ${pos?'#00e67644':'#ff3d5744'};border-radius:3px;padding:0 4px;font-family:var(--mono)">✓ SOLD</span>`
+        : `<span style="background:#ff3d5718;color:var(--red);border:1px solid #ff3d5744;border-radius:3px;padding:0 4px;font-family:var(--mono)">💀 RUGGED</span>`;
       ph = `<div style="text-align:right;line-height:1.3">
-        <div style="font-family:var(--mono);font-weight:700;font-size:11px;color:${pos ? 'var(--green)' : 'var(--red)'}">${pos ? '+' : ''}${p.profit.toFixed(3)}</div>
-        <div style="font-size:9px;color:${pos ? 'var(--green)' : 'var(--red)'};opacity:.65">${pos ? '+' : ''}${pct}% · in@${p.buyMult.toFixed(2)}x</div>
+        <div style="font-family:var(--mono);font-weight:700;font-size:11px;color:${pos?'var(--green)':'var(--red)'}">${pos?'+':''}${p.profit.toFixed(3)}</div>
+        <div style="font-size:9px;color:${pos?'var(--green)':'var(--red)'};opacity:.65">${pos?'+':''}${pct}% · in@${p.buyMult.toFixed(2)}x</div>
+        <div style="font-size:8px;margin-top:1px">${badge}</div>
       </div>`;
     }
 
