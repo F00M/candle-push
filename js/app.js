@@ -122,18 +122,23 @@ function resizeCanvas() {
   if (!canvas) return;
   const wrap = document.getElementById('chartWrap');
   const rect  = wrap.getBoundingClientRect();
+  const dpr   = window.devicePixelRatio || 1;
   W = rect.width  || wrap.offsetWidth  || wrap.clientWidth;
   H = rect.height || wrap.offsetHeight || wrap.clientHeight;
   if (W < 10 || H < 10) { W = window.innerWidth - 360; H = 400; }
-  canvas.width  = W;
-  canvas.height = H;
+  // Scale canvas for HiDPI/Retina — makes everything crisp
+  canvas.width  = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width  = W + 'px';
+  canvas.style.height = H + 'px';
   ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr); // scale all drawing operations
 }
 
 window.addEventListener('resize', resizeCanvas);
 
-function CW()   { return Math.min(14, Math.max(8, Math.floor(W / 70))); }
-function CG()   { return Math.max(3, Math.floor(CW() * 0.35)); }
+function CW()   { return Math.min(18, Math.max(10, Math.floor(W / 60))); }
+function CG()   { return Math.max(4, Math.floor(CW() * 0.4)); }
 function STEP() { return CW() + CG(); }
 
 function render() {
@@ -153,10 +158,10 @@ function drawGrid() {
     const v = scaleMin + ((scaleMax - scaleMin) / steps) * i;
     const y = toY(v);
     if (y < 4 || y > H - 4) continue;
-    ctx.strokeStyle = 'rgba(30,45,71,0.55)'; ctx.lineWidth = 0.5; ctx.setLineDash([3, 5]);
+    ctx.strokeStyle = 'rgba(30,45,71,0.7)'; ctx.lineWidth = 0.5; ctx.setLineDash([3, 5]);
     ctx.beginPath(); ctx.moveTo(42, y); ctx.lineTo(W, y); ctx.stroke();
     ctx.setLineDash([]);
-    ctx.fillStyle = 'rgba(90,106,138,0.6)'; ctx.font = '8px Space Mono,monospace';
+    ctx.fillStyle = 'rgba(140,160,200,0.85)'; ctx.font = 'bold 9px Space Mono,monospace';
     ctx.fillText(v.toFixed(2) + 'x', 39, y + 3);
   }
   ctx.textAlign = 'left';
@@ -176,25 +181,31 @@ function drawCandles() {
     const x = 44 + i * cs, isG = c.close >= c.open;
     const col = (crashing && c.forming) ? R : (isG ? G : R);
     const oY = toY(c.open), cY = toY(c.close), hY = toY(c.high), lY = toY(c.low);
-    ctx.strokeStyle = col; ctx.lineWidth = 1.3;
+    // Wick — thicker & sharper
+    ctx.strokeStyle = col; ctx.lineWidth = 1.8;
     ctx.beginPath(); ctx.moveTo(x + cw/2, hY); ctx.lineTo(x + cw/2, lY); ctx.stroke();
-    const bTop = Math.min(oY, cY), bH = Math.max(2.5, Math.abs(oY - cY));
-    ctx.globalAlpha = c.forming ? 1 : 0.88; ctx.fillStyle = col;
-    ctx.fillRect(x, bTop, cw, bH); ctx.globalAlpha = 1;
-    ctx.strokeStyle = col; ctx.lineWidth = 0.5; ctx.strokeRect(x, bTop, cw, bH);
+    // Body
+    const bTop = Math.min(oY, cY), bH = Math.max(3, Math.abs(oY - cY));
+    ctx.globalAlpha = c.forming ? 1 : 0.95;
+    ctx.fillStyle = col;
+    ctx.fillRect(x, bTop, cw, bH);
+    ctx.globalAlpha = 1;
+    // Sharp border — same color, no blur
+    ctx.strokeStyle = isG ? '#00ff88' : '#ff2244'; ctx.lineWidth = 0.8;
+    ctx.strokeRect(x, bTop, cw, bH);
   });
 }
 
 function drawPriceLine() {
   const y = toY(price);
   if (y < 0 || y > H) return;
-  ctx.setLineDash([4, 4]); ctx.strokeStyle = 'rgba(0,230,118,0.28)'; ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]); ctx.strokeStyle = 'rgba(0,230,118,0.45)'; ctx.lineWidth = 1.2;
   ctx.beginPath(); ctx.moveTo(42, y); ctx.lineTo(W - 2, y); ctx.stroke(); ctx.setLineDash([]);
-  const tag = mult.toFixed(4) + 'x'; ctx.font = 'bold 9px Space Mono,monospace';
-  const tw = ctx.measureText(tag).width + 12;
-  ctx.fillStyle = 'rgba(0,230,118,0.12)'; ctx.fillRect(W - tw - 2, y - 8, tw, 15);
-  ctx.strokeStyle = 'rgba(0,230,118,0.42)'; ctx.lineWidth = 0.5; ctx.strokeRect(W - tw - 2, y - 8, tw, 15);
-  ctx.fillStyle = G; ctx.fillText(tag, W - tw + 2, y + 4);
+  const tag = mult.toFixed(4) + 'x'; ctx.font = 'bold 10px Space Mono,monospace';
+  const tw = ctx.measureText(tag).width + 14;
+  ctx.fillStyle = 'rgba(0,230,118,0.18)'; ctx.fillRect(W - tw - 2, y - 9, tw, 17);
+  ctx.strokeStyle = 'rgba(0,230,118,0.7)'; ctx.lineWidth = 0.8; ctx.strokeRect(W - tw - 2, y - 9, tw, 17);
+  ctx.fillStyle = '#00ff88'; ctx.fillText(tag, W - tw + 2, y + 4);
 }
 
 function spawnEvent(type, name, col, atMult) {
