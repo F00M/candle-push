@@ -84,7 +84,15 @@ html, body { width: 100%; height: 100%; background: #080a0d; overflow: hidden; }
 }
 .phase-pill.live   { background: #071a0f; color: var(--green);  border: 1px solid #0a2918; }
 .phase-pill.wait   { background: #1a1500; color: var(--yellow); border: 1px solid #3a2800; }
-.phase-pill.crash  { background: #1a070a; color: var(--red);    border: 1px solid #2a0a10; }
+.phase-pill.crash  {
+  background: #1a070a; color: var(--red); border: 1px solid #2a0a10;
+  animation: pillFlicker 0.4s infinite;
+}
+
+@keyframes pillFlicker {
+  0%, 100% { opacity: 1; background: #1a070a; }
+  50%       { opacity: 0.6; background: #2a0a10; }
+}
 
 .ms-badge { font-size: 9px; color: var(--muted); font-family: var(--mono); }
 
@@ -229,7 +237,17 @@ html, body { width: 100%; height: 100%; background: #080a0d; overflow: hidden; }
 }
 .mult-overlay.s { color: var(--green);  text-shadow: 0 0 32px rgba(0,230,118,.2); }
 .mult-overlay.d { color: var(--yellow); text-shadow: 0 0 32px rgba(255,214,0,.2); }
-.mult-overlay.c { color: var(--red);    text-shadow: 0 0 40px rgba(255,61,87,.38); }
+.mult-overlay.c {
+  color: var(--red);
+  text-shadow: 0 0 40px rgba(255,61,87,.6), 0 0 80px rgba(255,61,87,.3);
+  animation: crashPulse 0.25s infinite;
+}
+
+/* Crash multiplier pulse */
+@keyframes crashPulse {
+  0%, 100% { transform: translateX(-50%) scale(1);   opacity: 1; }
+  50%       { transform: translateX(-50%) scale(1.06); opacity: 0.85; }
+}
 
 /* Countdown overlay */
 .countdown-overlay {
@@ -249,20 +267,48 @@ html, body { width: 100%; height: 100%; background: #080a0d; overflow: hidden; }
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center; flex-direction: column;
   gap: 10px;
-  background: rgba(14,16,19,.92);
+  background: rgba(14,16,19,.88);
   opacity: 0; pointer-events: none;
-  transition: opacity .3s;
+  transition: opacity .25s;
 }
 .crash-overlay.show { opacity: 1; }
+
 .crash-title {
   font-family: var(--font);
-  font-size: clamp(24px, 3vw, 36px);
+  font-size: clamp(28px, 3.5vw, 42px);
   color: var(--red);
   font-weight: 700;
-  letter-spacing: 1px;
-  animation: flicker 1s infinite;
+  letter-spacing: 2px;
+  animation: rugFlicker 0.35s infinite, rugScale 0.6s ease-out;
+  text-shadow: 0 0 40px rgba(255,61,87,.7), 0 0 80px rgba(255,61,87,.3);
 }
-@keyframes flicker { 0%,100%{ opacity:1 } 50%{ opacity:.35 } }
+
+/* Rug overlay red vignette pulse */
+.crash-overlay.show::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse at center, transparent 40%, rgba(255,61,87,0.18) 100%);
+  animation: vignettePulse 0.5s ease-out forwards;
+  pointer-events: none;
+  border-radius: 0;
+}
+
+@keyframes vignettePulse {
+  0%   { opacity: 0; }
+  30%  { opacity: 1; }
+  100% { opacity: 0.6; }
+}
+
+@keyframes rugFlicker {
+  0%, 100% { opacity: 1; }
+  45%       { opacity: 0.25; }
+}
+@keyframes rugScale {
+  0%   { transform: scale(1.4); opacity: 0; }
+  60%  { transform: scale(0.95); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
 .crash-sub { font-size: 14px; color: var(--muted); }
 .crash-cd  { font-size: 12px; color: var(--muted); margin-top: 2px; }
 
@@ -408,3 +454,44 @@ html, body { width: 100%; height: 100%; background: #080a0d; overflow: hidden; }
 .lp.p { color: var(--green); }
 .lp.n { color: var(--red); }
 .lp.w { color: var(--yellow); }
+
+/* ── Mobile Responsive ── */
+@media (max-width: 900px) {
+  .tabs .tab:not(.active) { display: none; }
+  .sidebar-left {
+    width: 130px !important;
+    min-width: 100px;
+  }
+  .sidebar-right {
+    width: 140px !important;
+  }
+  .bq-wrap .bq:nth-child(n+4) { display: none; } /* hide extra bet buttons on tablet */
+}
+
+@media (max-width: 600px) {
+  .topbar { padding: 0 10px; height: 40px; gap: 6px; }
+  .logo { font-size: 13px; }
+  .tabs  { display: none; }
+  .deposit-btn { display: none; }
+
+  .sidebar-left  { display: none !important; }
+  .sidebar-right { width: 110px !important; min-width: 90px; }
+
+  .chart-topbar .cpill { display: none; }
+  .chart-topbar span:first-child { display: none; }
+
+  .mult-overlay { font-size: clamp(26px, 7vw, 38px); }
+
+  .bet-panel { padding: 6px 8px 8px; }
+  .bet-inp   { width: 70px; font-size: 12px; }
+  .bq-wrap   { gap: 2px; }
+  .bq        { font-size: 9px; padding: 2px 5px; }
+  .bq-wrap .bq:nth-child(n+3) { display: none; } /* only show +0.001 and +0.01 on mobile */
+
+  .btn-b, .btn-s { padding: 10px 8px; font-size: 13px; }
+  .ab { font-size: 10px; padding: 5px 3px; }
+
+  .bal-val { font-size: 12px; }
+  .lb-name { font-size: 10px; }
+  .lb-bet  { font-size: 8px; }
+}
