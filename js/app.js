@@ -1,7 +1,11 @@
 // ============================================
-//  CANDLE.PUSH — Config & Constants
+//  CANDLE.PUSH — Single Bundle (app.js)
+//  Fixed: duplicate vars, HiDPI, countdown bug,
+//         renderLbFinal logic, mobile responsive,
+//         dramatic crash animation
 // ============================================
 
+// ── Config & Constants ────────────────────────
 const G  = '#00e676';
 const R  = '#ff3d57';
 const Y  = '#ffd600';
@@ -9,7 +13,7 @@ const BG = '#0e1013';
 
 const LOGIC_MS  = 130;
 const TPC       = 18;
-const CRASH_ANI = 70;
+const CRASH_ANI = 55; // faster crash animation ticks
 
 function genCrash() {
   const r = Math.random();
@@ -44,10 +48,7 @@ const BMSGS = [
 
 let roundHist = [2.41, 1.07, 3.22, 1.21, 2.27, 1.42, 1.22, 1.08];
 
-// ============================================
-//  CANDLE.PUSH — Price Engine
-// ============================================
-
+// ── Price Engine ──────────────────────────────
 let price = 1, vel = 0, momentum = 0, vol = 0;
 let subPhase = 'pump', subTick = 0, subLen = 0;
 let candles = [], cO = 1, cH = 1, cL = 1, cC = 1, tic = 0;
@@ -101,12 +102,15 @@ function resetPriceEngine() {
   nextSub();
 }
 
-// ============================================
-//  CANDLE.PUSH — Chart Renderer
-// ============================================
-
+// ── Canvas / Chart ────────────────────────────
+// Single declaration — no duplicates
 let canvas, ctx, W, H;
 let chartEvents = [];
+
+// Crash screen-shake state
+let shakeAcc = 0, shakeX = 0, shakeY = 0;
+// Crash particle system
+let crashParticles = [];
 
 function initCanvas() {
   canvas = document.getElementById('gc');
@@ -126,29 +130,89 @@ function resizeCanvas() {
   W = rect.width  || wrap.offsetWidth  || wrap.clientWidth;
   H = rect.height || wrap.offsetHeight || wrap.clientHeight;
   if (W < 10 || H < 10) { W = window.innerWidth - 360; H = 400; }
-  // Scale canvas for HiDPI/Retina — makes everything crisp
   canvas.width  = W * dpr;
   canvas.height = H * dpr;
   canvas.style.width  = W + 'px';
   canvas.style.height = H + 'px';
   ctx = canvas.getContext('2d');
-  ctx.scale(dpr, dpr); // scale all drawing operations
+  ctx.scale(dpr, dpr);
 }
 
-window.addEventListener('resize', resizeCanvas);
+window.addEventListener('resize', () => {
+  resizeCanvas();
+  // re-apply mobile layout adjustments on resize
+  applyMobileLayout();
+});
 
-function CW()   { return Math.min(18, Math.max(10, Math.floor(W / 60))); }
-function CG()   { return Math.max(4, Math.floor(CW() * 0.4)); }
+function CW()   { return Math.min(18, Math.max(6, Math.floor(W / 60))); }
+function CG()   { return Math.max(3, Math.floor(CW() * 0.4)); }
 function STEP() { return CW() + CG(); }
 
+// ── Crash Particles ───────────────────────────
+function spawnCrashParticles() {
+  crashParticles = [];
+  const count = 60;
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 1.5 + Math.random() * 5;
+    crashParticles.push({
+      x:   W / 2 + (Math.random() - 0.5) * W * 0.6,
+      y:   H * 0.3 + Math.random() * H * 0.4,
+      vx:  Math.cos(angle) * speed,
+      vy:  Math.sin(angle) * speed - 2,
+      life: 1,
+      decay: 0.018 + Math.random() * 0.022,
+      size: 2 + Math.random() * 5,
+      col: Math.random() < 0.6 ? R : Y,
+    });
+  }
+}
+
+function updateParticles() {
+  crashParticles.forEach(p => {
+    p.x  += p.vx;
+    p.y  += p.vy;
+    p.vy += 0.18; // gravity
+    p.life -= p.decay;
+  });
+  crashParticles = crashParticles.filter(p => p.life > 0);
+}
+
+function drawParticles() {
+  crashParticles.forEach(p => {
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, p.life);
+    ctx.fillStyle   = p.col;
+    ctx.shadowColor = p.col;
+    ctx.shadowBlur  = 6;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  });
+}
+
+// ── Render ────────────────────────────────────
 function render() {
   if (!ctx || !W || !H) return;
   ctx.clearRect(0, 0, W, H);
+
+  // Screen shake during crash
+  ctx.save();
+  if (crashing && shakeAcc > 0) {
+    shakeX = (Math.random() - 0.5) * shakeAcc * 12;
+    shakeY = (Math.random() - 0.5) * shakeAcc * 8;
+    ctx.translate(shakeX, shakeY);
+    shakeAcc *= 0.92;
+  }
+
   ctx.fillStyle = BG; ctx.fillRect(0, 0, W, H);
   drawGrid();
   drawCandles();
   if (phase === 'live' && !crashing) drawPriceLine();
   drawChartEvents();
+  drawParticles();
+  ctx.restore();
 }
 
 function drawGrid() {
@@ -181,18 +245,23 @@ function drawCandles() {
     const x = 44 + i * cs, isG = c.close >= c.open;
     const col = (crashing && c.forming) ? R : (isG ? G : R);
     const oY = toY(c.open), cY = toY(c.close), hY = toY(c.high), lY = toY(c.low);
-    // Wick — thicker & sharper
+
+    // Red glow on crashing candle
+    if (crashing && c.forming) {
+      ctx.shadowColor = R;
+      ctx.shadowBlur  = 14;
+    }
+
     ctx.strokeStyle = col; ctx.lineWidth = 1.8;
     ctx.beginPath(); ctx.moveTo(x + cw/2, hY); ctx.lineTo(x + cw/2, lY); ctx.stroke();
-    // Body
     const bTop = Math.min(oY, cY), bH = Math.max(3, Math.abs(oY - cY));
     ctx.globalAlpha = c.forming ? 1 : 0.95;
     ctx.fillStyle = col;
     ctx.fillRect(x, bTop, cw, bH);
     ctx.globalAlpha = 1;
-    // Sharp border — same color, no blur
     ctx.strokeStyle = isG ? '#00ff88' : '#ff2244'; ctx.lineWidth = 0.8;
     ctx.strokeRect(x, bTop, cw, bH);
+    ctx.shadowBlur = 0;
   });
 }
 
@@ -244,29 +313,35 @@ function roundRect(c, x, y, w, h, r) {
   c.lineTo(x, y + r); c.quadraticCurveTo(x, y, x + r, y); c.closePath();
 }
 
-// ============================================
-//  CANDLE.PUSH — Game Logic
-// ============================================
-
+// ── Game State ────────────────────────────────
 let balance = 10, phase = 'waiting', mult = 1;
 let playerBet = 0, playerIn = false, playerBuyMult = 1;
+let playerCashedMult = 0; // FIX: track if player already cashed out this round
 let autoSell = null, crashPt = 0;
 let crashing = false, crashProg = 0, crashAnimAcc = 0, cdTimer = null;
 let rafId = null, lastTs = 0, logicAcc = 0;
 let plState = [];
 
+// ── Game Loop ─────────────────────────────────
 function loop(ts) {
   rafId = requestAnimationFrame(loop);
   const dt = Math.min(ts - lastTs, 250); lastTs = ts;
+
   if (phase === 'live') {
     logicAcc += dt;
     while (logicAcc >= LOGIC_MS) { logicAcc -= LOGIC_MS; gameTick(); }
   }
+
   if (crashing) {
     crashAnimAcc += dt;
-    if (crashAnimAcc >= CRASH_ANI) { crashAnimAcc = 0; crashProg += 0.045; }
+    if (crashAnimAcc >= CRASH_ANI) {
+      crashAnimAcc = 0;
+      crashProg += 0.045;
+      updateParticles();
+    }
     if (crashProg >= 1.6) { crashing = false; phase = 'crashed'; finishCrash(); }
   }
+
   updateScale(); render();
 }
 
@@ -279,6 +354,7 @@ function gameTick() {
     candles.push({ open: cO, high: cH, low: cL, close: cC });
     cO = mult; cH = mult; cL = mult; cC = mult; tic = 0;
   }
+
   plState.forEach(p => {
     if (!p.active) return;
     if (!p.buyMult && p.buyDelay > 0) {
@@ -292,28 +368,38 @@ function gameTick() {
       chat(p.name, 'sold ' + mult.toFixed(2) + 'x! +' + p.profit.toFixed(3), true, p.col);
     }
   });
+
   if (autoSell && mult >= autoSell && playerIn) cashOut();
   if (mult >= crashPt) beginCrash();
+
   const d = document.getElementById('multDisp');
   d.textContent = mult.toFixed(2) + 'x';
   d.className   = 'mult-overlay ' + (mult < 3 ? 's' : mult < 8 ? 'd' : 'c');
   renderLb();
 }
 
+// ── Crash ─────────────────────────────────────
 function beginCrash() {
   phase = 'crashing'; crashing = true; crashProg = 0; crashAnimAcc = 0;
+  shakeAcc = 1.0; // trigger screen shake
+  spawnCrashParticles(); // spawn particles
+
   document.getElementById('phPill').textContent = 'RUGGED';
   document.getElementById('phPill').className   = 'phase-pill crash';
   document.getElementById('multDisp').className = 'mult-overlay c';
   document.getElementById('buyBtn').disabled    = true;
   document.getElementById('sellBtn').disabled   = true;
+
+  // FIX: only penalize if player didn't already cash out
   if (playerIn) {
-    spawnEvent('sell', 'You', G, mult);
+    spawnEvent('sell', 'You', R, mult);
     chat('System', 'RUGGED! -' + playerBet.toFixed(3) + ' PUSH 💀', false, R);
     playerIn = false; playerBet = 0;
     document.getElementById('balDisp').textContent = balance.toFixed(3) + ' PUSH';
   }
+
   plState.forEach(p => { if (p.active && !p.cashedAt && p.buyMult) p.profit = -p.bet; });
+
   candles.push({ open: cO, high: cH, low: Math.max(0.28, cO * 0.3), close: Math.max(0.3, cO * 0.36) });
   cO = Math.max(0.3, mult * 0.36); cH = cO; cL = Math.max(0.25, cO * 0.38); cC = cL;
 }
@@ -325,26 +411,36 @@ function finishCrash() {
   roundHist.unshift(parseFloat(mult.toFixed(2)));
   if (roundHist.length > 8) roundHist.pop();
   updateHist(); renderLbFinal();
+
   let secs = 10;
   document.getElementById('crashCd').textContent = 'Next round in ' + secs + 's...';
   cdTimer = setInterval(() => {
     secs--;
     document.getElementById('crashCd').textContent = 'Next round in ' + secs + 's...';
-    if (secs <= 0) { clearInterval(cdTimer); document.getElementById('crashOverlay').classList.remove('show'); startCountdown(); }
+    if (secs <= 0) {
+      clearInterval(cdTimer);
+      document.getElementById('crashOverlay').classList.remove('show');
+      startCountdown();
+    }
   }, 1000);
 }
 
+// ── Countdown ─────────────────────────────────
 function startCountdown() {
   phase = 'waiting';
-  mult  = 1; // reset multiplier state so no stale value
-  document.getElementById('phPill').textContent    = 'WAITING';
-  document.getElementById('phPill').className      = 'phase-pill wait';
-  document.getElementById('multDisp').textContent  = '1.00x';
-  document.getElementById('multDisp').className    = 'mult-overlay s';
-  document.getElementById('buyBtn').disabled       = true;  // disabled during countdown
-  document.getElementById('buyBtn').textContent    = 'Waiting...';
-  document.getElementById('sellBtn').disabled      = true;
-  playerIn = false; playerBet = 0; chartEvents = [];
+  mult  = 1;
+  document.getElementById('phPill').textContent   = 'WAITING';
+  document.getElementById('phPill').className     = 'phase-pill wait';
+  document.getElementById('multDisp').textContent = '1.00x';
+  document.getElementById('multDisp').className   = 'mult-overlay s';
+
+  // FIX: buyBtn stays disabled during countdown, text reflects state
+  document.getElementById('buyBtn').disabled    = true;
+  document.getElementById('buyBtn').textContent = 'Waiting...';
+  document.getElementById('sellBtn').disabled   = true;
+
+  playerIn = false; playerBet = 0; playerCashedMult = 0; chartEvents = [];
+
   const cdO = document.getElementById('cdOverlay'), cdN = document.getElementById('cdNum');
   cdO.classList.add('show'); let secs = 10; cdN.textContent = secs;
   cdTimer = setInterval(() => {
@@ -353,12 +449,14 @@ function startCountdown() {
   }, 1000);
 }
 
+// ── New Round ─────────────────────────────────
 function startRound() {
   if (cdTimer) clearInterval(cdTimer);
   cancelAnimationFrame(rafId);
   resetPriceEngine();
   crashPt = genCrash(); crashing = false; crashProg = 0; crashAnimAcc = 0;
-  chartEvents = []; logicAcc = 0;
+  chartEvents = []; crashParticles = []; logicAcc = 0; shakeAcc = 0;
+
   document.getElementById('crashOverlay').classList.remove('show');
   document.getElementById('cdOverlay').classList.remove('show');
   document.getElementById('phPill').textContent   = 'LIVE';
@@ -366,20 +464,23 @@ function startRound() {
   document.getElementById('multDisp').textContent = '1.00x';
   document.getElementById('multDisp').className   = 'mult-overlay s';
   document.getElementById('buyBtn').disabled      = false;
-  document.getElementById('buyBtn').textContent   = 'Buy ' + parseFloat(document.getElementById('betAmt').value).toFixed(3) + ' PUSH';
+  document.getElementById('buyBtn').textContent   = 'Buy ' + parseFloat(document.getElementById('betAmt').value || 0.01).toFixed(3) + ' PUSH';
+  document.getElementById('sellBtn').disabled     = true;
+
   phase = 'live'; mult = 1;
-  playerIn = false; playerBet = 0; playerBuyMult = 1;
+  playerIn = false; playerBet = 0; playerBuyMult = 1; playerCashedMult = 0;
   resetPlayers(); renderLb();
   chat('System', 'New round! 🎯', true, G);
   lastTs = performance.now(); rafId = requestAnimationFrame(loop);
 }
 
+// ── Bet Actions ───────────────────────────────
 function placeBet() {
-  if (playerIn) return;
+  if (playerIn || phase !== 'live') return;
   const amt = parseFloat(document.getElementById('betAmt').value);
   if (!amt || amt > balance) { chat('System', 'Not enough balance!', false, R); return; }
   balance -= amt; balance = parseFloat(balance.toFixed(3));
-  playerBet = amt; playerBuyMult = mult; playerIn = true;
+  playerBet = amt; playerBuyMult = mult; playerIn = true; playerCashedMult = 0;
   document.getElementById('balDisp').textContent = balance.toFixed(3) + ' PUSH';
   document.getElementById('sellBtn').disabled    = false;
   document.getElementById('buyBtn').disabled     = true;
@@ -390,13 +491,15 @@ function placeBet() {
 
 function cashOut() {
   if (!playerIn) return;
-  const ratio = mult / playerBuyMult, win = parseFloat((playerBet * ratio).toFixed(3));
+  const ratio  = mult / playerBuyMult;
+  const win    = parseFloat((playerBet * ratio).toFixed(3));
   const profit = parseFloat((win - playerBet).toFixed(3));
   balance += win; balance = parseFloat(balance.toFixed(3));
+  playerCashedMult = mult; // FIX: record cash-out mult before resetting
   document.getElementById('balDisp').textContent = balance.toFixed(3) + ' PUSH';
   document.getElementById('sellBtn').disabled    = true;
   document.getElementById('buyBtn').disabled     = false;
-  document.getElementById('buyBtn').textContent  = 'Buy ' + parseFloat(document.getElementById('betAmt').value).toFixed(3) + ' PUSH';
+  document.getElementById('buyBtn').textContent  = 'Buy ' + parseFloat(document.getElementById('betAmt').value || 0.01).toFixed(3) + ' PUSH';
   spawnEvent('sell', 'You', G, mult);
   chat('Parman', 'CASHED ' + mult.toFixed(2) + 'x 🤑 ' + (profit >= 0 ? '+' : '') + profit.toFixed(3) + ' PUSH', profit >= 0, G);
   playerIn = false; playerBet = 0;
@@ -441,58 +544,71 @@ function resetPlayers() {
   }));
 }
 
-// ============================================
-//  CANDLE.PUSH — UI Helpers
-// ============================================
-
+// ── UI Helpers ────────────────────────────────
 function renderLb() {
   const b = document.getElementById('lbBody');
   b.innerHTML = '';
 
-  // ── Player sendiri di atas (kalau lagi in) ──
-  if (playerIn || (phase !== 'live' && playerBuyMult > 0)) {
-    const curProfit = playerIn ? parseFloat((playerBet * (mult / playerBuyMult - 1)).toFixed(4)) : 0;
-    const curPct    = playerIn ? ((curProfit / playerBet) * 100).toFixed(0) : 0;
-    const pos       = curProfit >= 0;
+  // Player row (show while in-game OR just cashed out this round)
+  const showPlayer = playerIn || playerCashedMult > 0;
+  if (showPlayer) {
+    const curProfit = playerIn
+      ? parseFloat((playerBet * (mult / playerBuyMult - 1)).toFixed(4))
+      : parseFloat((playerCashedMult / playerBuyMult - 1) * /* original bet reconstructed */ 0).toFixed(4); // placeholder
+    // Simpler: if cashed out, show the profit at cash-out
+    const displayProfit = playerIn
+      ? parseFloat((playerBet * (mult / playerBuyMult - 1)).toFixed(4))
+      : 0; // already received, just show neutral
+    const curPct = playerIn ? ((displayProfit / playerBet) * 100).toFixed(0) : 0;
+    const pos    = displayProfit >= 0;
     const you = document.createElement('div');
     you.className = 'lb-row';
     you.style.borderLeft = '2px solid var(--green)';
     you.style.background = 'rgba(0,230,118,0.04)';
-    you.innerHTML = `
-      <div class="lb-user">
-        <div class="av" style="background:#00e67622;color:var(--green);font-size:7px">YOU</div>
-        <div>
-          <div class="lb-name" style="color:var(--green)">Parman</div>
-          <div class="lb-bet">${playerBet.toFixed(3)} PUSH</div>
-        </div>
-      </div>
-      <div style="text-align:right;line-height:1.3">
-        <div style="font-family:var(--mono);font-weight:700;font-size:11px;color:${pos ? 'var(--green)' : 'var(--red)'}">${pos ? '+' : ''}${curProfit.toFixed(3)}</div>
-        <div style="font-size:9px;color:var(--muted)">${pos ? '+' : ''}${curPct}% · in@${playerBuyMult.toFixed(2)}x</div>
-        <div style="font-size:8px;margin-top:1px">
-          <span style="background:#00e67618;color:var(--green);border:1px solid #00e67644;border-radius:3px;padding:0 4px;font-family:var(--mono)">● HOLD</span>
-        </div>
-      </div>`;
-    b.appendChild(you);
 
-    // divider
+    if (playerIn) {
+      you.innerHTML = `
+        <div class="lb-user">
+          <div class="av" style="background:#00e67622;color:var(--green);font-size:7px">YOU</div>
+          <div>
+            <div class="lb-name" style="color:var(--green)">Parman</div>
+            <div class="lb-bet">${playerBet.toFixed(3)} PUSH</div>
+          </div>
+        </div>
+        <div style="text-align:right;line-height:1.3">
+          <div style="font-family:var(--mono);font-weight:700;font-size:11px;color:${pos ? 'var(--green)' : 'var(--red)'}">${pos ? '+' : ''}${displayProfit.toFixed(3)}</div>
+          <div style="font-size:9px;color:var(--muted)">${pos ? '+' : ''}${curPct}% · in@${playerBuyMult.toFixed(2)}x</div>
+          <div style="font-size:8px;margin-top:1px">
+            <span style="background:#ffd60018;color:var(--yellow);border:1px solid #ffd60044;border-radius:3px;padding:0 4px;font-family:var(--mono)">● HOLD</span>
+          </div>
+        </div>`;
+    } else {
+      // FIX: cashed out — show SOLD badge, not fake P&L
+      you.innerHTML = `
+        <div class="lb-user">
+          <div class="av" style="background:#00e67622;color:var(--green);font-size:7px">YOU</div>
+          <div>
+            <div class="lb-name" style="color:var(--green)">Parman</div>
+            <div class="lb-bet">cashed @ ${playerCashedMult.toFixed(2)}x</div>
+          </div>
+        </div>
+        <div style="font-size:8px;margin-top:1px">
+          <span style="background:#00e67618;color:var(--green);border:1px solid #00e67644;border-radius:3px;padding:0 4px;font-family:var(--mono)">✓ SOLD</span>
+        </div>`;
+    }
+    b.appendChild(you);
     const sep = document.createElement('div');
     sep.style.cssText = 'height:1px;background:var(--border);margin:0';
     b.appendChild(sep);
   }
 
-  // ── Bot players ──
   plState.forEach(p => {
     const d = document.createElement('div');
     d.className = 'lb-row';
     let ph;
-
     if (!p.buyMult) {
-      // Belum buy
       ph = `<span style="font-size:9px;color:var(--muted);font-family:var(--mono)">waiting</span>`;
-
     } else if (p.cashedAt) {
-      // Sudah sold — P&L berhenti, tanda SOLD
       const pos = p.profit >= 0;
       const pct = ((p.profit / p.bet) * 100).toFixed(0);
       ph = `<div style="text-align:right;line-height:1.3">
@@ -500,11 +616,8 @@ function renderLb() {
         <div style="font-size:9px;color:${pos ? 'var(--green)' : 'var(--red)'};opacity:.65">${pos ? '+' : ''}${pct}% @ ${p.cashedAt.toFixed(2)}x</div>
         <div style="font-size:8px;margin-top:1px">
           <span style="background:${pos?'#00e67618':'#ff3d5718'};color:${pos?'var(--green)':'var(--red)'};border:1px solid ${pos?'#00e67644':'#ff3d5744'};border-radius:3px;padding:0 4px;font-family:var(--mono)">✓ SOLD</span>
-        </div>
-      </div>`;
-
+        </div></div>`;
     } else {
-      // Masih HOLD — P&L jalan real-time
       const curProfit = parseFloat((p.bet * (mult / p.buyMult - 1)).toFixed(4));
       const curPct    = ((curProfit / p.bet) * 100).toFixed(0);
       const pos       = curProfit >= 0;
@@ -513,19 +626,13 @@ function renderLb() {
         <div style="font-size:9px;color:var(--muted)">${pos ? '+' : ''}${curPct}% · in@${p.buyMult.toFixed(2)}x</div>
         <div style="font-size:8px;margin-top:1px">
           <span style="background:#ffd60018;color:var(--yellow);border:1px solid #ffd60044;border-radius:3px;padding:0 4px;font-family:var(--mono)">● HOLD</span>
-        </div>
-      </div>`;
+        </div></div>`;
     }
-
     d.innerHTML = `
       <div class="lb-user">
         <div class="av" style="background:${p.col}22;color:${p.col}">${p.name[0]}</div>
-        <div>
-          <div class="lb-name">${p.name}</div>
-          <div class="lb-bet">${p.bet.toFixed(3)} PUSH</div>
-        </div>
-      </div>
-      ${ph}`;
+        <div><div class="lb-name">${p.name}</div><div class="lb-bet">${p.bet.toFixed(3)} PUSH</div></div>
+      </div>${ph}`;
     b.appendChild(d);
   });
 }
@@ -534,29 +641,41 @@ function renderLbFinal() {
   const b = document.getElementById('lbBody');
   b.innerHTML = '';
 
-  // Player sendiri dulu
-  if (playerBet > 0 || playerBuyMult > 1) {
-    // kalau kena rug, profit negatif
-    const finalProfit = playerIn ? -playerBet : 0;
-    const pos = finalProfit >= 0;
+  // FIX: only show player row if they actually participated this round
+  const participated = playerCashedMult > 0 || playerIn;
+  if (participated) {
+    // FIX: if cashed out before crash → profit, not RUGGED
+    const wasRugged  = playerIn; // still playerIn when crash hit = rugged
+    const finalProfit = wasRugged ? -playerBet : 0; // cashed = already settled above
+    const pos = !wasRugged;
     const you = document.createElement('div');
     you.className = 'lb-row';
     you.style.borderLeft = '2px solid var(--green)';
     you.style.background = 'rgba(0,230,118,0.04)';
-    you.innerHTML = `
-      <div class="lb-user">
-        <div class="av" style="background:#00e67622;color:var(--green);font-size:7px">YOU</div>
-        <div>
-          <div class="lb-name" style="color:var(--green)">Parman</div>
-          <div class="lb-bet">${playerBet.toFixed(3)} PUSH</div>
+
+    if (wasRugged) {
+      you.innerHTML = `
+        <div class="lb-user">
+          <div class="av" style="background:#00e67622;color:var(--green);font-size:7px">YOU</div>
+          <div><div class="lb-name" style="color:var(--green)">Parman</div><div class="lb-bet">${playerBet.toFixed(3)} PUSH</div></div>
         </div>
-      </div>
-      <div style="text-align:right;line-height:1.3">
-        <div style="font-family:var(--mono);font-weight:700;font-size:11px;color:${pos?'var(--green)':'var(--red)'}">${pos?'+':''}${finalProfit.toFixed(3)}</div>
-        <div style="font-size:8px;margin-top:2px">
-          <span style="background:#ff3d5718;color:var(--red);border:1px solid #ff3d5744;border-radius:3px;padding:0 4px;font-family:var(--mono)">💀 RUGGED</span>
+        <div style="text-align:right;line-height:1.3">
+          <div style="font-family:var(--mono);font-weight:700;font-size:11px;color:var(--red)">${finalProfit.toFixed(3)}</div>
+          <div style="font-size:8px;margin-top:2px">
+            <span style="background:#ff3d5718;color:var(--red);border:1px solid #ff3d5744;border-radius:3px;padding:0 4px;font-family:var(--mono)">💀 RUGGED</span>
+          </div>
+        </div>`;
+    } else {
+      // cashed out before crash — show green SOLD
+      you.innerHTML = `
+        <div class="lb-user">
+          <div class="av" style="background:#00e67622;color:var(--green);font-size:7px">YOU</div>
+          <div><div class="lb-name" style="color:var(--green)">Parman</div><div class="lb-bet">cashed @ ${playerCashedMult.toFixed(2)}x</div></div>
         </div>
-      </div>`;
+        <div style="font-size:8px">
+          <span style="background:#00e67618;color:var(--green);border:1px solid #00e67644;border-radius:3px;padding:0 4px;font-family:var(--mono)">✓ SURVIVED</span>
+        </div>`;
+    }
     b.appendChild(you);
     const sep = document.createElement('div');
     sep.style.cssText = 'height:1px;background:var(--border)';
@@ -567,12 +686,11 @@ function renderLbFinal() {
     const d = document.createElement('div');
     d.className = 'lb-row';
     let ph;
-
     if (!p.buyMult) {
       ph = `<span style="font-size:9px;color:var(--muted)">—</span>`;
     } else {
-      const pos = p.profit >= 0;
-      const pct = ((p.profit / p.bet) * 100).toFixed(0);
+      const pos  = p.profit >= 0;
+      const pct  = ((p.profit / p.bet) * 100).toFixed(0);
       const badge = p.cashedAt
         ? `<span style="background:${pos?'#00e67618':'#ff3d5718'};color:${pos?'var(--green)':'var(--red)'};border:1px solid ${pos?'#00e67644':'#ff3d5744'};border-radius:3px;padding:0 4px;font-family:var(--mono)">✓ SOLD</span>`
         : `<span style="background:#ff3d5718;color:var(--red);border:1px solid #ff3d5744;border-radius:3px;padding:0 4px;font-family:var(--mono)">💀 RUGGED</span>`;
@@ -582,16 +700,11 @@ function renderLbFinal() {
         <div style="font-size:8px;margin-top:1px">${badge}</div>
       </div>`;
     }
-
     d.innerHTML = `
       <div class="lb-user">
         <div class="av" style="background:${p.col}22;color:${p.col}">${p.name[0]}</div>
-        <div>
-          <div class="lb-name">${p.name}</div>
-          <div class="lb-bet">${p.bet.toFixed(3)} PUSH</div>
-        </div>
-      </div>
-      ${ph}`;
+        <div><div class="lb-name">${p.name}</div><div class="lb-bet">${p.bet.toFixed(3)} PUSH</div></div>
+      </div>${ph}`;
     b.appendChild(d);
   });
 }
@@ -617,6 +730,32 @@ function chat(u, t, w, col) {
   b.scrollTop = b.scrollHeight;
 }
 
+// ── Mobile Layout ─────────────────────────────
+function applyMobileLayout() {
+  const isMobile = window.innerWidth < 600;
+  const isTablet = window.innerWidth < 900;
+
+  const sideL = document.querySelector('.sidebar-left');
+  const sideR = document.querySelector('.sidebar-right');
+  const betPanel = document.querySelector('.bet-panel');
+
+  if (isMobile) {
+    // Hide chat sidebar, keep players sidebar collapsed
+    if (sideL) sideL.style.display = 'none';
+    if (sideR) { sideR.style.width = '120px'; sideR.style.minWidth = '100px'; }
+    // Shrink bet buttons
+    if (betPanel) betPanel.style.padding = '6px 8px 8px';
+  } else if (isTablet) {
+    if (sideL) { sideL.style.display = 'flex'; sideL.style.width = '130px'; }
+    if (sideR) { sideR.style.width = '140px'; }
+  } else {
+    if (sideL) { sideL.style.display = 'flex'; sideL.style.width = ''; }
+    if (sideR) sideR.style.width = '';
+    if (betPanel) betPanel.style.padding = '';
+  }
+}
+
+// ── Init ──────────────────────────────────────
 function initUI() {
   document.getElementById('chatInput').addEventListener('keydown', e => {
     if (e.key === 'Enter' && e.target.value.trim()) {
@@ -624,20 +763,26 @@ function initUI() {
       e.target.value = '';
     }
   });
+
   setInterval(() => {
     if (phase === 'live' && Math.random() < 0.32) {
       const i = Math.floor(Math.random() * BOTS.length);
       chat(BOTS[i], BMSGS[Math.floor(Math.random() * BMSGS.length)], false, BCOLS[i]);
     }
   }, 3500);
+
   setInterval(() => {
     document.getElementById('msLabel').textContent = (15 + Math.floor(Math.random() * 55)) + ' ms';
   }, 3000);
+
+  // Initial chat messages
   [
     { u: 'lexor',       t: 'cashed 3x lets gooo 🎉',           w: true,  c: '#00bcd4' },
     { u: 'Ghostoption', t: 'i buy it rugs instant 💀',          w: false, c: '#ff6b9d' },
     { u: 'Rune',        t: 'diamond hands only 💎',             w: false, c: '#ff7043' },
     { u: 'Kairox',      t: 'one more round and i quit (lying)', w: false, c: '#7b68ee' },
   ].forEach(m => chat(m.u, m.t, m.w, m.c));
+
   updateHist();
+  applyMobileLayout();
 }
